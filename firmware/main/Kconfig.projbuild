@@ -1,0 +1,204 @@
+menu "VOX baseline configuration"
+
+    menu "Node identity"
+        config VOX_NODE_ID
+            int "Numeric node id (unique per board, 1..65534)"
+            range 1 65534
+            default 1
+            help
+                Short identity carried in every frame header and bound into the
+                key derivation. Flash board A with 1 and board B with 2.
+
+        config VOX_ROLE_TALKER
+            bool "This node may transmit audio"
+            default y
+
+        config VOX_ROLE_LISTENER
+            bool "This node may receive and play audio"
+            default y
+    endmenu
+
+    menu "Audio pipeline"
+        choice VOX_AUDIO_SRC
+            prompt "Audio capture source"
+            default VOX_SRC_SYNTH
+            config VOX_SRC_SYNTH
+                bool "Synthetic generator (deterministic, no hardware needed)"
+            config VOX_SRC_I2S_INMP441
+                bool "I2S digital microphone (INMP441 / SPH0645)"
+            config VOX_SRC_NONE
+                bool "None (listener-only build)"
+        endchoice
+
+        choice VOX_SYNTH_KIND
+            prompt "Synthetic waveform"
+            depends on VOX_SRC_SYNTH
+            default VOX_SYNTH_SPEECHLIKE
+            config VOX_SYNTH_SPEECHLIKE
+                bool "Speech-like (formant sum, amplitude envelope)"
+            config VOX_SYNTH_TONE
+                bool "1 kHz sine (pure tone, for SNR / distortion checks)"
+            config VOX_SYNTH_SWEEP
+                bool "Ramp counter (bit-exact integrity check)"
+        endchoice
+
+        choice VOX_AUDIO_SINK
+            prompt "Audio playout sink"
+            default VOX_SINK_I2S_MAX98357A
+            config VOX_SINK_I2S_MAX98357A
+                bool "I2S amplifier / DAC (MAX98357A, PCM5102)"
+            config VOX_SINK_NONE
+                bool "None (discard after decode; measures pipeline without DMA)"
+        endchoice
+
+        config VOX_SAMPLE_RATE_HZ
+            int "Sample rate (Hz)"
+            default 8000
+
+        config VOX_FRAME_MS
+            int "Audio frame duration (ms)"
+            range 5 60
+            default 20
+            help
+                One audio frame maps to exactly one ESP-NOW packet. Frame
+                duration, codec and payload budget are coupled: the build
+                asserts at start-up if the encoded frame will not fit.
+
+        choice VOX_CODEC
+            prompt "Speech codec"
+            default VOX_CODEC_G711U
+            config VOX_CODEC_G711U
+                bool "G.711 u-law (64 kb/s, 8 bit/sample)"
+            config VOX_CODEC_PCM16
+                bool "Raw PCM16 (128 kb/s, no compression)"
+            config VOX_CODEC_CODEC2
+                bool "Codec2 3200 (3.2 kb/s) - requires codec2 component"
+        endchoice
+
+        config VOX_JITTER_TARGET_FRAMES
+            int "Jitter buffer target depth (frames)"
+            range 1 16
+            default 3
+
+        config VOX_JITTER_MAX_FRAMES
+            int "Jitter buffer capacity (frames)"
+            range 2 32
+            default 8
+    endmenu
+
+    menu "I2S pin map"
+        config VOX_I2S_OUT_BCLK
+            int "MAX98357A BCLK GPIO"
+            default 26
+        config VOX_I2S_OUT_LRCLK
+            int "MAX98357A LRC / WS GPIO"
+            default 25
+        config VOX_I2S_OUT_DIN
+            int "MAX98357A DIN GPIO"
+            default 22
+
+        config VOX_I2S_IN_BCLK
+            int "INMP441 SCK GPIO"
+            depends on VOX_SRC_I2S_INMP441
+            default 14
+        config VOX_I2S_IN_LRCLK
+            int "INMP441 WS GPIO"
+            depends on VOX_SRC_I2S_INMP441
+            default 15
+        config VOX_I2S_IN_SD
+            int "INMP441 SD GPIO"
+            depends on VOX_SRC_I2S_INMP441
+            default 32
+    endmenu
+
+    menu "Security"
+        config VOX_CRYPTO_ENABLED
+            bool "Enable application-layer authenticated encryption"
+            default y
+            help
+                Disable to build the unprotected control condition. This is the
+                measurement that isolates per-frame cryptographic cost from the
+                rest of the pipeline; keep everything else identical.
+
+        choice VOX_AEAD
+            prompt "AEAD construction"
+            depends on VOX_CRYPTO_ENABLED
+            default VOX_AEAD_GCM
+            config VOX_AEAD_GCM
+                bool "AES-128-GCM"
+            config VOX_AEAD_CCM
+                bool "AES-128-CCM (same family as 802.11 CCMP)"
+        endchoice
+
+        config VOX_TAG_LEN
+            int "Authentication tag length (bytes)"
+            depends on VOX_CRYPTO_ENABLED
+            range 8 16
+            default 16
+            help
+                16 is the full tag. 8 halves the per-frame airtime cost of
+                authentication at the price of forgery resistance; both are
+                legitimate measurement points, the shorter one must be
+                reported as such.
+
+        config VOX_REPLAY_WINDOW
+            int "Replay window size (frames)"
+            range 16 64
+            default 32
+
+        config VOX_PMK_HEX
+            string "Provisioned pre-shared master key (64 hex chars = 32 bytes)"
+            default "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+            help
+                Development default only. Every board in one experiment must
+                carry the same PMK. Replace before any claim about real
+                deployment security is made.
+
+        config VOX_EPOCH_MAX_FRAMES
+            int "Frames per key epoch before automatic rekey"
+            default 1048576
+            help
+                2^20, the usage limit the lightweight-crypto guidance cited in
+                the literature review recommends per key.
+    endmenu
+
+    menu "Experiment control"
+        config VOX_PHANTOM_PEERS
+            int "Additional synthetic peers for sender-side N-scaling"
+            range 0 19
+            default 0
+            help
+                Adds unicast peers with unused MAC addresses so sender CPU,
+                memory, crypto and transmit cost can be swept over N with only
+                two physical boards. Phantom peers never acknowledge, so
+                receiver-side and retry behaviour from these peers is NOT
+                valid evidence; only sender-side cost is.
+
+        config VOX_TELEMETRY_CSV
+            bool "Emit per-frame CSV telemetry on UART"
+            default y
+
+        config VOX_METRICS_PERIOD_MS
+            int "Resource sampling period (ms)"
+            default 1000
+
+        config VOX_PTT_GPIO
+            int "Push-to-talk button GPIO (-1 to disable)"
+            default -1
+            help
+                Active-low with internal pull-up. Leave at -1 and drive talk
+                bursts from the serial console instead.
+
+        config VOX_TRACE_GPIO_TX
+            int "Scope trace GPIO, pulsed at transmit (-1 to disable)"
+            default -1
+        config VOX_TRACE_GPIO_RX
+            int "Scope trace GPIO, pulsed at playout (-1 to disable)"
+            default -1
+            help
+                Wire both boards to one oscilloscope or logic analyser to get a
+                ground-truth one-way latency measurement independent of the
+                software clock-offset estimator.
+    endmenu
+
+endmenu

@@ -1,0 +1,59 @@
+# ---------------------------------------------------------------------------
+# Build settings for the measurement rig. Every entry here is a choice that
+# affects the numbers, so each one is justified.
+# ---------------------------------------------------------------------------
+
+CONFIG_IDF_TARGET="esp32"
+
+# -O2. A -Og build would inflate every stage timing in the study, and would
+# inflate the cryptography most, because that is the hot arithmetic loop.
+# Never publish figures from a debug build.
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT=n
+
+# 1 kHz tick. The frame period is 20 ms and the transmit task is paced with
+# vTaskDelayUntil; at the 100 Hz default the pacing would quantise to 10 ms
+# and put a systematic sawtooth into the inter-packet timing.
+CONFIG_FREERTOS_HZ=1000
+
+# Per-task CPU accounting and stack high-water marks: the resource evidence
+# the report requires alongside any ESP32 claim.
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
+CONFIG_FREERTOS_USE_STATS_FORMATTING_FUNCTIONS=y
+CONFIG_FREERTOS_RUN_TIME_STATS_USING_ESP_TIMER=y
+CONFIG_FREERTOS_VTASKLIST_INCLUDE_COREID=y
+
+# Cryptography. AES is hardware accelerated on the ESP32; GHASH and CCM's CBC-MAC
+# are not, which is precisely the asymmetry the AEAD comparison is there to
+# measure, so leave the accelerator on and report what it does and does not cover.
+CONFIG_MBEDTLS_HARDWARE_AES=y
+CONFIG_MBEDTLS_GCM_C=y
+CONFIG_MBEDTLS_CCM_C=y
+CONFIG_MBEDTLS_HKDF_C=y
+
+# Wi-Fi. Power save is disabled in code as well; a sleeping receiver would add
+# latency the results would wrongly attribute to the protocol.
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=16
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=8
+
+# Console. Raise to 921600 if the per-frame CSV dump is slow to transfer;
+# the dump happens after a run, so baud rate does not affect measurements.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+
+# The transmit task legitimately blocks for a full frame interval while it
+# serialises sends across peers at high N. Give the watchdog room so a real
+# scaling limit reports as a deadline miss rather than a reset.
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=n
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=n
+
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=4096
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# Keep the log level at INFO. DEBUG prints inside the receive path would
+# serialise on the UART and add milliseconds to the latency figures.
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y

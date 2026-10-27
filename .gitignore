@@ -1,0 +1,20 @@
+# ESP-IDF and experiment-generated files
+firmware/build/
+firmware/managed_components/
+firmware/dependencies.lock
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/sdkconfig.*
+!firmware/sdkconfig.defaults
+**/__pycache__/
+firmware/results/
+
+# Report/build deliverables kept outside the code repository
+Final_Report_Using_Template/
+*.pdf
+*.zip
+Declaration.pdf
+
+# Local Codex/workspace metadata
+.agents/
+.codex/
